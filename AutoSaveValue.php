@@ -4,10 +4,11 @@
  * Action tags to trigger automatic saving of values during data entry.
  * 
  * TODO
- * - @SAVE-ON-EDIT 
  * - Add action tags to AT dialogs
- * - Framework v8 for CSRF protection
- *
+ * - Extend implementation for other field types
+ * - Handle update success, no change, error message/log
+ * - Decide how to handle calc/calcdate/calctext fields
+ * 
  * @author Luke Stevens, Murdoch Children's Research Institute
  */
 namespace MCRI\AutoSaveValue;
@@ -16,6 +17,9 @@ use ExternalModules\AbstractExternalModule;
 
 class AutoSaveValue extends AbstractExternalModule
 {
+    protected const TAG_AUTOSAVE = '@AUTOSAVE';
+    protected const TAG_AUTOSAVE_FORM = '@AUTOSAVE-FORM';
+    protected const TAG_AUTOSAVE_SURVEY = '@AUTOSAVE-SURVEY';
     protected $noauth;
     protected $project_id;
     protected $record;
@@ -33,7 +37,7 @@ class AutoSaveValue extends AbstractExternalModule
         $this->record = \htmlspecialchars($record, ENT_QUOTES);
         $this->event_id = $event_id;
         $this->instance = $repeat_instance;
-        $pf=array_keys($Proj->forms[$instrument]);
+        $pf=array_keys($Proj->forms[$instrument]['fields']);
         $this->includeSaveFunctions($pf);
     }
 
@@ -53,7 +57,7 @@ class AutoSaveValue extends AbstractExternalModule
         $taggedFields = array();
         foreach ($pageFields as $f) {
             $annotation = $Proj->metadata[$f]['misc'];
-            if (preg_match("/$tag/",$annotation)) {
+            if (preg_match("/(^|\s)$tag($|\s)/",$annotation)) {
                 $taggedFields[] = $f;
             }
         }
@@ -61,10 +65,13 @@ class AutoSaveValue extends AbstractExternalModule
     }
 
     protected function includeSaveFunctions($pageFields) {
-        $this->fieldsSaveOnLoad = $this->filterPageFieldsByTag($pageFields, '@SAVE-ON-PAGE-LOAD');
-        $this->fieldsSaveOnEdit = array(); // TODO
-
-        if (count($this->fieldsSaveOnLoad) + count($this->fieldsSaveOnEdit) === 0 ) return;
+        $this->autoSaveFields = $this->filterPageFieldsByTag($pageFields, static::TAG_AUTOSAVE);
+        if ($this->noauth) {
+            $this->autoSaveFields = array_merge($this->autoSaveFields, $this->filterPageFieldsByTag($pageFields, static::TAG_AUTOSAVE_SURVEY));
+        } else {
+            $this->autoSaveFields = array_merge($this->autoSaveFields, $this->filterPageFieldsByTag($pageFields, static::TAG_AUTOSAVE_FORM));
+        }
+        if (count($this->autoSaveFields) === 0 ) return;
         
         $context = array(
             'project_id' => $this->project_id, 
@@ -83,22 +90,27 @@ class AutoSaveValue extends AbstractExternalModule
         </style>
         <script type="text/javascript">
             $(function(){
-                var asv = <?=$this->jsObjName?>;
-                asv.context = JSON.parse('<?=json_encode($context)?>');
-                asv.saveUrl = '<?=$this->getUrl('save.php', $this->noauth);?>';
-                asv.fieldsSaveOnLoad = JSON.parse('<?=json_encode($this->fieldsSaveOnLoad)?>');
-                asv.fieldsSaveOnEdit = JSON.parse('<?=json_encode($this->fieldsSaveOnEdit)?>');
+                var module = <?=$this->jsObjName?>;
+                module.context = JSON.parse('<?=json_encode($context)?>');
+                module.saveUrl = '<?=$this->getUrl('save.php', $this->noauth);?>';
+                module.autoSaveFields = JSON.parse('<?=json_encode($this->autoSaveFields)?>');
 
-                asv.appendIcons = function(field) {
+                module.appendIcons = function(field) {
                     $('[name='+field+']').after('<i class="fas fa-save mx-1 asv-save" title="Saved"></i><i class="fas fa-times mx-1 asv-fail" title="Save failed"></i>')
                 }
 
-                asv.save = function(field){
-                    asv.context.field = field;
-                    asv.context.value = asv.readFieldValue(field);
+                module.fieldChange = function(field) {
+                    $('[name='+field+']').on('change', function(){
+                        module.save(field);
+                    });
+                }
+
+                module.save = function(field){
+                    module.context.field = field;
+                    module.context.value = module.readFieldValue(field);
                     $.post(
-                        asv.saveUrl,
-                        asv.context,
+                        module.saveUrl,
+                        module.context,
                         function(rtn) {
                             if (rtn) {
                                 $('[name='+field+']').parent('td').find('.asv-save').fadeIn(1000);
@@ -110,16 +122,19 @@ class AutoSaveValue extends AbstractExternalModule
                     );
                 };
 
-                asv.readFieldValue = function(field) {
+                module.readFieldValue = function(field) {
                     return $('[name='+field+']').eq(0).val();
                 };
 
-                $(document).ready(function(){
-                    asv.fieldsSaveOnLoad.forEach(asv.appendIcons)
-                    asv.fieldsSaveOnEdit.forEach(asv.appendIcons)
-                    asv.fieldsSaveOnLoad.forEach(asv.save)
-                    //console.log(asv.fieldsSaveOnEdit);
-                });
+                module.init = function() {
+                    module.autoSaveFields.forEach((asf) => { 
+                        module.appendIcons(asf);
+                        module.fieldChange(asf);
+                        if(dataEntryFormValuesChanged) module.save(asf); // save fields with default or @SETVALUE values (including empty)
+                    });
+                };
+
+                module.init();
             });
         </script>
         <?php
@@ -130,7 +145,7 @@ class AutoSaveValue extends AbstractExternalModule
         if (!$this->readContext()) throw new \Exception("Invalid data submitted ".htmlspecialchars(json_encode($_POST),ENT_QUOTES));
         $saveData = array(
             $Proj->table_pk => $this->record,
-            $this->field => $this->value
+            $this->field => $this->formatSaveValue($this->field, $this->value)
         );
 
         if (\REDCap::isLongitudinal()) {
@@ -156,12 +171,25 @@ class AutoSaveValue extends AbstractExternalModule
         return $rtn;
     }
 
+    public function formatSaveValue($field, $value) {
+        global $Proj;
+        $fieldType = $Proj->metadata[$field]['element_type'];
+        $fieldValType = $Proj->metadata[$field]['element_validation_type'];
+
+        if ($fieldType=='text' && strpos($fieldValType,'mdy')) {
+            $value = \DateTimeRC::date_mdy2ymd($value);
+        } else if ($fieldType=='text' && strpos($fieldValType,'dmy')) {
+            $value = \DateTimeRC::date_dmy2ymd($value);
+        }
+        return $value;
+    }
+
     protected function readContext() {
         global $Proj;
         $ok = true;
         foreach (static::$expectedPostParams as $pp) {
             if (isset($_POST[$pp])) {
-                $this->$pp = \htmlspecialchars($_POST[$pp]);
+                $this->$pp = \htmlspecialchars($_POST[$pp], ENT_QUOTES);
             } else {
                 $ok = false;
             }
