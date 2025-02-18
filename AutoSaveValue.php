@@ -161,7 +161,7 @@ class AutoSaveValue extends AbstractExternalModule
         if (count($saveResult['errors'])>0) {
             $title = "Auto-Save Value module";
             $detail = "Save failed: ";
-            $detail .= " \n".print_r($_POST, true);
+            $detail .= " \n".htmlspecialchars(print_r($_POST, true), ENT_QUOTES);
             $detail .= " \n".print_r($saveResult['errors'], true);
             \REDCap::logEvent($title, $detail, '');
             $rtn = 0;
