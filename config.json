@@ -9,10 +9,23 @@
 			"institution": "Murdoch Children's Research Institute"
 		}
 	],
-    "framework-version": 8,
-    "compatibility": { "redcap-version-min": "11.1.1" },
-	"permissions": [ "redcap_data_entry_form", "redcap_survey_page" ],
-    "no-auth-pages": [ "save" ],
-	"system-settings": [ ],
+    "framework-version": 16,
+    "auth-ajax-actions": [ "save" ],
+    "no-auth-ajax-actions": [ "save" ],
+    "action-tags": [
+        {
+            "tag": "@AUTOSAVE",
+            "description": "Tag a text field with <code>@AUTOSAVE</code> to have the value saved automatically as it is edited."
+        },
+        {
+            "tag": "@AUTOSAVE-FORM",
+            "description": "As <code>@AUTOSAVE</code>, but in data entry mode only, not in survey mode."
+        },
+        {
+            "tag": "@AUTOSAVE-SURVEY",
+            "description": "As <code>@AUTOSAVE</code>, but in survey mode only, not in data entry mode."
+        }
+    ],
+    "system-settings": [ ],
 	"project-settings": [ ]
 }

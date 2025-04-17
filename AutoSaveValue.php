@@ -17,6 +17,7 @@ use ExternalModules\AbstractExternalModule;
 
 class AutoSaveValue extends AbstractExternalModule
 {
+    protected const AUTOSAVE_ACTION = 'save';
     protected const TAG_AUTOSAVE = '@AUTOSAVE';
     protected const TAG_AUTOSAVE_FORM = '@AUTOSAVE-FORM';
     protected const TAG_AUTOSAVE_SURVEY = '@AUTOSAVE-SURVEY';
@@ -28,13 +29,14 @@ class AutoSaveValue extends AbstractExternalModule
     protected $jsObjName;
     protected $fieldsSaveOnLoad;
     protected $fieldsSaveOnEdit;
+    protected $autoSaveFields;
     static $expectedPostParams = [ 'project_id','record','event_id','instance','field','value'];
 
     public function redcap_data_entry_form($project_id, $record=null, $instrument, $event_id, $group_id=null, $repeat_instance=1) {
         global $Proj;
         $this->noauth = false;
         $this->project_id = $project_id;
-        $this->record = \htmlspecialchars($record, ENT_QUOTES);
+        $this->record = $record;
         $this->event_id = $event_id;
         $this->instance = $repeat_instance;
         $pf=array_keys($Proj->forms[$instrument]['fields']);
@@ -45,10 +47,10 @@ class AutoSaveValue extends AbstractExternalModule
         global $pageFields;
         $this->noauth = true;
         $this->project_id = $project_id;
-        $this->record = \htmlspecialchars($record, ENT_QUOTES);
+        $this->record = $record;
         $this->event_id = $event_id;
         $this->instance = $repeat_instance;
-        $pf=$pageFields[\htmlspecialchars($_GET['__page__'], ENT_QUOTES)];
+        $pf=$pageFields[$this->escape($_GET['__page__'])];
         $this->includeSaveFunctions($pf);
     }
 
@@ -73,17 +75,10 @@ class AutoSaveValue extends AbstractExternalModule
         }
         if (count($this->autoSaveFields) === 0 ) return;
         
-        $context = array(
-            'project_id' => $this->project_id, 
-            'record' => $this->record,
-            'event_id' => $this->event_id,
-            'instance' => $this->instance,
-            'redcap_csrf_token' => $this->getCSRFToken()
-        );
-
         $this->initializeJavascriptModuleObject();
         $this->jsObjName = $this->getJavascriptModuleObjectName();
         ?>
+        <!-- Auto-Save Value external module: start-->
         <style type="text/css">
             .asv-save { color: green; display: none; }
             .asv-fail { color: red; display: none; }
@@ -91,8 +86,6 @@ class AutoSaveValue extends AbstractExternalModule
         <script type="text/javascript">
             $(function(){
                 var module = <?=$this->jsObjName?>;
-                module.context = JSON.parse('<?=json_encode($context)?>');
-                module.saveUrl = '<?=$this->getUrl('save.php', $this->noauth);?>';
                 module.autoSaveFields = JSON.parse('<?=json_encode($this->autoSaveFields)?>');
 
                 module.appendIcons = function(field) {
@@ -100,26 +93,30 @@ class AutoSaveValue extends AbstractExternalModule
                 }
 
                 module.fieldChange = function(field) {
-                    $('[name='+field+']').on('change', function(){
-                        module.save(field);
+                    $('[name='+field+']').on('change', function() {
+                        module.save(field, module.readFieldValue(field));
                     });
                 }
 
-                module.save = function(field){
-                    module.context.field = field;
-                    module.context.value = module.readFieldValue(field);
-                    $.post(
-                        module.saveUrl,
-                        module.context,
-                        function(rtn) {
-                            if (rtn) {
-                                $('[name='+field+']').parent('td').find('.asv-save').fadeIn(1000);
-                                $('[name='+field+']').removeClass('calcChanged');
-                            } else {
-                                $('[name='+field+']').parent('td').find('.asv-fail').fadeIn(1000);
-                            }
+                module.saveSuccess = function(field) {
+                    $('[name='+field+']').parent('td').find('.asv-save').fadeIn(1000);
+                    $('[name='+field+']').removeClass('calcChanged');
+                };
+                module.saveFailed = function(field) {
+                    $('[name='+field+']').parent('td').find('.asv-fail').fadeIn(1000);
+                };
+                
+                module.save = function(field, value){
+                    module.ajax('<?=static::AUTOSAVE_ACTION?>', [field, value]).then(function(response) {
+                        if (response) {
+                            module.saveSuccess(field);
+                        } else {
+                            module.saveFailed(field);
                         }
-                    );
+                    }).catch(function(err) {
+                        console.log('Auto-save failed: field=\''+field+'\'; value=\''+value+'\': '+err);
+                        module.saveFailed(field);
+                    });
                 };
 
                 module.readFieldValue = function(field) {
@@ -130,45 +127,63 @@ class AutoSaveValue extends AbstractExternalModule
                     module.autoSaveFields.forEach((asf) => { 
                         module.appendIcons(asf);
                         module.fieldChange(asf);
-                        if(dataEntryFormValuesChanged) module.save(asf); // save fields with default or @SETVALUE values (including empty)
+                        if (dataEntryFormValuesChanged) module.save(asf, module.readFieldValue(asf)); // save fields with @DEFAULT or @SETVALUE values (including empty)
                     });
                 };
 
                 module.init();
             });
         </script>
+        <!-- Auto-Save Value external module: end-->
         <?php
     }
 
-    public function saveValue() {
+    public function redcap_module_ajax($action, $payload, $project_id, $record, $instrument, $event_id, $repeat_instance, $survey_hash, $response_id, $survey_queue_hash, $page, $page_full, $user_id, $group_id) {
         global $Proj;
-        if (!$this->readContext()) throw new \Exception("Invalid data submitted ".htmlspecialchars(json_encode($_POST),ENT_QUOTES));
-        $saveData = array(
-            $Proj->table_pk => $this->record,
-            $this->field => $this->formatSaveValue($this->field, $this->value)
-        );
+        $this->project_id = $project_id;
+        $this->record = $record;
+        $this->event_id = $event_id;
+        $this->instance = $repeat_instance;
+        $rtn = 0;
 
-        if (\REDCap::isLongitudinal()) {
-            $saveData['redcap_event_name'] = \REDCap::getEventNames(true, false, $this->event_id);
-        }
+        try {
+            if (!is_array($payload)) throw new \Exception('Unexpected payload '.$this->escape(json_encode($payload)));
+            $payload = $this->escape(array_values($payload));
 
-        if (!empty($this->instance) && $this->instance > 1) {
-            $saveData['redcap_repeat_instance'] = $this->instance;
-        }
+            if (!is_string($payload[0]) || !array_key_exists($payload[0], $Proj->forms[$instrument]['fields'])) throw new \Exception('Unexpected field name '.json_encode($payload[0]));
+            $field = $payload[0];
 
-        $saveResult = \REDCap::saveData('json', json_encode(array($saveData)), 'overwrite');
+            if (!isset($payload[1])) throw new \Exception("Field $field no value supplied");
+            $value = $payload[1];
 
-        if (count($saveResult['errors'])>0) {
+            $saveData = array(
+                $Proj->table_pk => $this->record,
+                $field => $this->formatSaveValue($field, $value)
+            );
+
+            if (\REDCap::isLongitudinal()) {
+                $saveData['redcap_event_name'] = \REDCap::getEventNames(true, false, $this->event_id);
+            }
+
+            if (!empty($this->instance) && $this->instance > 1) {
+                $saveData['redcap_repeat_instance'] = $this->instance;
+            }
+
+            $saveResult = \REDCap::saveData('json', json_encode(array($saveData)), 'overwrite');
+
+            if (isset($saveResult['errors']) && !empty($saveResult['errors'])) {
+                $detail = "Field: $field; Value: $value";
+                $detail .= " \nErrors: ".print_r($saveResult['errors'], true);
+                throw new \Exception($detail);
+            } else {
+                $rtn = 1;
+            }
+        } catch(\Throwable $th) {
             $title = "Auto-Save Value module";
-            $detail = "Save failed: ";
-            $postData = array_map('htmlspecialchars', $_POST);
-            $detail .= " \n".print_r($postData, true);
-            $detail .= " \n".print_r($saveResult['errors'], true);
-            \REDCap::logEvent($title, $detail, '');
-            $rtn = 0;
-        } else {
-            $rtn = 1;
+            $detail = "Save failed: ".$th->getMessage();
+            \REDCap::logEvent($title, $detail, '', $record, $event_id);
         }
+
         return $rtn;
     }
 
@@ -183,21 +198,5 @@ class AutoSaveValue extends AbstractExternalModule
             $value = \DateTimeRC::date_dmy2ymd($value);
         }
         return $value;
-    }
-
-    protected function readContext() {
-        global $Proj;
-        $ok = true;
-        foreach (static::$expectedPostParams as $pp) {
-            if (isset($_POST[$pp])) {
-                $this->$pp = \htmlspecialchars($_POST[$pp], ENT_QUOTES);
-            } else {
-                $ok = false;
-            }
-        }
-        if ($this->project_id!=PROJECT_ID) $ok = false;
-        if (!array_key_exists($this->event_id, $Proj->eventInfo)) $ok = false;
-        if (!array_key_exists($this->field, $Proj->metadata)) $ok = false;
-        return $ok;
     }
 }
