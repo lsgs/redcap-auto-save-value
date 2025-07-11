@@ -1,7 +1,7 @@
 {
 	"name": "Auto-Save Value",
 	"namespace": "MCRI\\AutoSaveValue",
-	"description": "Action tags to trigger automatic saving of values during data entry.",
+	"description": "<code>@AUTOSAVE</code> action tags to trigger automatic saving of field values during data entry.",
 	"authors": [
 		{
 			"name": "Luke Stevens",
@@ -15,7 +15,7 @@
     "action-tags": [
         {
             "tag": "@AUTOSAVE",
-            "description": "Tag a text field with <code>@AUTOSAVE</code> to have the value saved automatically as it is edited."
+            "description": "Tag a text field with <code>@AUTOSAVE</code> to have the value saved automatically after its value is updated."
         },
         {
             "tag": "@AUTOSAVE-FORM",
@@ -24,6 +24,14 @@
         {
             "tag": "@AUTOSAVE-SURVEY",
             "description": "As <code>@AUTOSAVE</code>, but in survey mode only, not in data entry mode."
+        },
+        {
+            "tag": "@AUTOSAVE-FORM-HIDEICON",
+            "description": "As <code>@AUTOSAVE-FORM</code>, but suppress the field's save icon where in data entry mode it would normally be shown."
+        },
+        {
+            "tag": "@AUTOSAVE-SURVEY-SHOWICON",
+            "description": "As <code>@AUTOSAVE-SURVEY</code>, but show the field's save icon where in survey mode it would normally be suppressed."
         }
     ],
     "system-settings": [ ],
