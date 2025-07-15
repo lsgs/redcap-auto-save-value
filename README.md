@@ -19,17 +19,17 @@ Action tags to trigger automatic saving of field values during data entry:
 - Auto-save cannot occur until the record exists for values to be saved to. This means that auto-save cannot work on the first page of a public survey, or when creating a new record.
 - Only one tag is required per field: you do not need to use both `@AUTOSAVE-SURVEY` _and_ `@AUTOSAVE-SURVEY-SHOWICON`, for example. `@AUTOSAVE-SURVEY-SHOWICON` is sufficient alone for an auto-save field on a survey with icon shown.
 - The auto-save tags do not operate in Draft Preview mode.
-- The auto-save tags do not operate when using the "Preview Instrument" external module and previewing an instrument with a record from the Online Designer.
+- The auto-save tags do not operate when previewing an instrument with a record data in the Online Designer using the "Preview Instrument" external module.
 
 ## Limitations
 
-- The following field types are currently **not supported**:
-    - Text fields with ontology lookup
-    - Calculated fields (including text fields with `@CALCDATE()` and `@CALCTEXT()`)
-    - Checkbox
-    - File upload
-    - Signature
-    - Slider
+The following field types are currently **\*not supported\***:
+- Text fields with ontology lookup
+- Calculated fields (including text fields with `@CALCDATE()` and `@CALCTEXT()`)
+- Checkbox
+- File upload
+- Signature
+- Slider
 
 ## Example
 

@@ -2,13 +2,6 @@
 /**
  * REDCap External Module: Auto-Save Value 
  * Action tags to trigger automatic saving of values during data entry.
- * 
- * TODO
- * - Add action tags to AT dialogs
- * - Extend implementation for other field types
- * - Handle update success, no change, error message/log
- * - Decide how to handle calc/calcdate/calctext fields
- * 
  * @author Luke Stevens, Murdoch Children's Research Institute
  */
 namespace MCRI\AutoSaveValue;
