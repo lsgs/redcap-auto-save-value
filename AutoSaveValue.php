@@ -166,6 +166,8 @@ class AutoSaveValue extends AbstractExternalModule
                     let elemType = $(f).eq(0).prop('type')
                     if (elemTag=='INPUT' && $(f).eq(0).hasClass('hiddenradio')) {
                         type = 'radio'; // covers yesno and truefalse too
+                    } else if (elemTag=='INPUT' && $(f).eq(0).hasClass('autosug-ont-field')) {
+                        type = 'text-ontology';
                     } else if (elemTag=='INPUT' && elemType=='text') {
                         type = 'text';
                     } else if (elemTag=='SELECT' && $(f).eq(0).hasClass('rc-autocomplete')) {
@@ -196,6 +198,8 @@ class AutoSaveValue extends AbstractExternalModule
                         }
                     } else if (type=='notes') {
                         module.findInput(field).closest('span[data-kind=field-value]').siblings('.expandLinkParent:first').prepend(span);
+                    } else if (type=='text-ontology') {
+                        // is working but suppressed: module.findInput(field).after(span);
                     } else {
                         module.findInput(field).after(span);
                     }
@@ -220,6 +224,8 @@ class AutoSaveValue extends AbstractExternalModule
                         radioButtons.on('change', {field:field}, module.updateHandler); // field_input is group of inputs, one per choice
                     } else if (field_type=='dropdown-autocomplete') {
                         field_input.on('change', {field:field}, module.updateHandler);
+                    } else if (field_type=='text-ontology') {
+                        // not working: field_input.on('autocompletechange', {field:field}, module.updateHandler);
                     } else {
                         field_input.on('blur', {field:field}, module.updateHandler);
                     }

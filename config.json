@@ -1,7 +1,7 @@
 {
 	"name": "Auto-Save Value",
 	"namespace": "MCRI\\AutoSaveValue",
-	"description": "<code>@AUTOSAVE</code> action tags to trigger automatic saving of field values during data entry.",
+	"description": "<code>@AUTOSAVE</code> action tags to trigger automatic saving of field values during data entry and/or on survey forms.",
 	"authors": [
 		{
 			"name": "Luke Stevens",

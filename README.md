@@ -27,7 +27,6 @@ Action tags to trigger automatic saving of field values during data entry:
 - The following field types are currently **not supported**:
     - Text fields with ontology lookup
     - Calculated fields (including text fields with `@CALCDATE()` and `@CALCTEXT()`)
-    - Radio (including Yes/No and True/False)
     - Checkbox
     - File upload
     - Signature
