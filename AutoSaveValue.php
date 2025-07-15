@@ -324,7 +324,7 @@ class AutoSaveValue extends AbstractExternalModule
                 $saveData['redcap_repeat_instance'] = $this->instance;
             }
 
-            $saveResult = array();//\REDCap::saveData('json', json_encode(array($saveData)), 'overwrite');
+            $saveResult = \REDCap::saveData('json', json_encode(array($saveData)), 'overwrite');
 
             if (isset($saveResult['errors']) && !empty($saveResult['errors'])) {
                 $detail = "Field: $field; Value: $value";
