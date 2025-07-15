@@ -117,8 +117,8 @@ class AutoSaveValue extends AbstractExternalModule
             }
         }
         $fieldsDefaultOrSetvalue = array_unique(array_merge($fieldsDefaultOrSetvalue, $this->filterPageFieldsByTag($pageFields, '@SETVALUE')));
-        $this->autoSaveOnLoadFields = array_intersect($this->autoSaveFields, $fieldsDefaultOrSetvalue);
-        $this->defaultNoAutoSaveFields = array_diff($fieldsDefaultOrSetvalue, $this->autoSaveFields);
+        $this->autoSaveOnLoadFields = array_values(array_intersect($this->autoSaveFields, $fieldsDefaultOrSetvalue));
+        $this->defaultNoAutoSaveFields = array_values(array_diff($fieldsDefaultOrSetvalue, $this->autoSaveFields));
 
         $this->initializeJavascriptModuleObject();
         $this->jsObjName = $this->getJavascriptModuleObjectName();
@@ -268,7 +268,7 @@ class AutoSaveValue extends AbstractExternalModule
                         module.appendIcons(asf);
                         module.addUpdateHander(asf);
                     });
-                    if (dataEntryFormValuesChanged) {
+                    if (dataEntryFormValuesChanged && module.autoSaveOnLoadFields.length) {
                         // save fields with values from @DEFAULT, @TODAY, @NOW, or @SETVALUE (including empty)
                         module.autoSaveOnLoadFields.forEach(function(asf) {
                             module.save(asf, module.readFieldValue(asf));
@@ -318,7 +318,7 @@ class AutoSaveValue extends AbstractExternalModule
                 $saveData['redcap_repeat_instance'] = $this->instance;
             }
 
-            $saveResult = \REDCap::saveData('json', json_encode(array($saveData)), 'overwrite');
+            $saveResult = array();//\REDCap::saveData('json', json_encode(array($saveData)), 'overwrite');
 
             if (isset($saveResult['errors']) && !empty($saveResult['errors'])) {
                 $detail = "Field: $field; Value: $value";
