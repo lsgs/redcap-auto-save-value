@@ -34,18 +34,20 @@ class AutoSaveValue extends AbstractExternalModule
     protected $fieldsSaveOnEdit;
     protected $autoSaveFields;
     protected $autoSaveIconSwapFields;
+    protected $autoSaveOnLoadFields;
+    protected $defaultNoAutoSaveFields;
     static $SupportedFieldTypes = [
         // 'calc',
         // 'checkbox',
         // 'file', // includes signature
-        // 'radio',
+        'radio',
         'select', // includes auto-complete
         // 'slider',
         'sql',
         'text', // excludes ontology
         'textarea',
-        // 'truefalse',
-        // 'yesno',
+        'truefalse',
+        'yesno'
     ];
 
     public function redcap_data_entry_form($project_id, $record=null, $instrument, $event_id, $group_id=null, $repeat_instance=1) {
@@ -84,7 +86,7 @@ class AutoSaveValue extends AbstractExternalModule
 
             $rawAnnotation = $Proj->metadata[$f]['misc'];
             $annotation = \Form::replaceIfActionTag($rawAnnotation, $Proj->project_id, $this->record, $this->event_id, $this->instrument, $this->instance);
-            if (preg_match("/(^|\s)$tag($|\s)/",$annotation)) {
+            if (preg_match("/(^|\s)$tag($|\s|=)/",$annotation)) {
 
                 if (!($Proj->metadata[$f]['element_type']=='text' && (preg_match("/@CALCTEXT|@CALCDATE/",$annotation)))) { 
                     $taggedFields[] = $f;
@@ -105,8 +107,19 @@ class AutoSaveValue extends AbstractExternalModule
             $this->autoSaveFields = array_merge($this->autoSaveFields, $this->autoSaveIconSwapFields, $this->filterPageFieldsByTag($pageFields, static::TAG_AUTOSAVE_FORM));
         }
         if (count($this->autoSaveFields) === 0 ) return;
-        $this->autoSaveFields = array_unique($this->autoSaveFields); // git rid of any duplicates e.g. if have both  @AUTOSAVE-SURVEY and @AUTOSAVE-SURVEY-SHOWICON
+        $this->autoSaveFields = array_unique($this->autoSaveFields); // get rid of any duplicates e.g. if have both  @AUTOSAVE-SURVEY and @AUTOSAVE-SURVEY-SHOWICON
         
+        $fieldsDefaultOrSetvalue = array();
+        $pageHasData = \Records::fieldsHaveData($this->record, $pageFields, $this->event_id, $this->instance);
+        if (!$pageHasData) {
+            foreach (array('@DEFAULT','@TODAY','@TODAY-SERVER','@TODAY-UTC','@NOW','@NOW-SERVER','@NOW-UTC') as $tag) {
+                $fieldsDefaultOrSetvalue = array_merge($fieldsDefaultOrSetvalue, $this->filterPageFieldsByTag($pageFields, $tag));
+            }
+        }
+        $fieldsDefaultOrSetvalue = array_unique(array_merge($fieldsDefaultOrSetvalue, $this->filterPageFieldsByTag($pageFields, '@SETVALUE')));
+        $this->autoSaveOnLoadFields = array_intersect($this->autoSaveFields, $fieldsDefaultOrSetvalue);
+        $this->defaultNoAutoSaveFields = array_diff($fieldsDefaultOrSetvalue, $this->autoSaveFields);
+
         $this->initializeJavascriptModuleObject();
         $this->jsObjName = $this->getJavascriptModuleObjectName();
         ?>
@@ -128,6 +141,8 @@ class AutoSaveValue extends AbstractExternalModule
                 module.isSurvey = <?=($this->noauth)?1:0;?>;
                 module.autoSaveFields = JSON.parse('<?=json_encode($this->autoSaveFields)?>');
                 module.iconSwapFields = JSON.parse('<?=json_encode($this->autoSaveIconSwapFields)?>');
+                module.autoSaveOnLoadFields = JSON.parse('<?=json_encode($this->autoSaveOnLoadFields)?>');
+                module.defaultNoAutoSaveFields = JSON.parse('<?=json_encode($this->defaultNoAutoSaveFields)?>');
                 module.singleFieldChange = false;
                 module.iconSpan = '<span class="asv-icons"><i class="fas fa-save mx-1 asv-default" title="Auto-save field value on change"></i><i class="fas fa-save mx-1 asv-save" title="Saved"></i><i class="fas fa-times mx-1 asv-fail" title="Save failed"></i></span>'
 
@@ -135,16 +150,28 @@ class AutoSaveValue extends AbstractExternalModule
                     return $('[name='+field+']:first');
                 };
 
+                module.findGroupInputs = function(field) {
+                    let input = $('[name='+field+']:first');
+                    let type = module.getFieldType(field)
+                    if (type=='radio') {
+                        return $('[name='+field+'___radio]'); // group of input type="radio", one per value
+                    } else {
+                        return $(input);
+                    }
+                };
+
                 module.getFieldType = function(field) {
                     let f = module.findInput(field); type = '';
                     let elemTag = $(f).eq(0).prop('nodeName');
                     let elemType = $(f).eq(0).prop('type')
-                    if (elemTag=='INPUT' && elemType=='text') {
+                    if (elemTag=='INPUT' && $(f).eq(0).hasClass('hiddenradio')) {
+                        type = 'radio'; // covers yesno and truefalse too
+                    } else if (elemTag=='INPUT' && elemType=='text') {
                         type = 'text';
                     } else if (elemTag=='SELECT' && $(f).eq(0).hasClass('rc-autocomplete')) {
                         type = 'dropdown-autocomplete';
                     } else if (elemTag=='SELECT') {
-                        type = 'dropdown-autocomplete';
+                        type = 'dropdown';
                     } else if (elemTag=='TEXTAREA') {
                         type = 'notes';
                     }
@@ -154,12 +181,19 @@ class AutoSaveValue extends AbstractExternalModule
                 module.appendIcons = function(field) {
                     let type = module.getFieldType(field);
                     let span = module.iconSpan;
-                    if (module.isSurvey && !module.iconSwapFields.includes(field) || // hide icons on survey unless directed to show
-                            !module.isSurvey && module.iconSwapFields.includes(field) ) { // hide icons on form when directed to hide
+                    if (module.isSurvey && !module.iconSwapFields.includes(field) // hide icons on survey unless directed to show
+                            || !module.isSurvey && module.iconSwapFields.includes(field) ) { // hide icons on form when directed to hide
                         span = span.replace('class="asv-icons"', 'class="asv-icons d-none"');
                     }
                     if (type=='dropdown-autocomplete') {
                         module.findInput(field).closest('span[data-kind=field-value]').find('div').append(span);
+                    } else if (type=='radio') {
+                        let radioButtons = module.findGroupInputs(field);
+                        if ($(radioButtons).eq(0).parent('td.choicematrix').length) {
+                            $(radioButtons).eq(0).closest('table[role=presentation]').siblings('.resetLinkParent:first').prepend(span);
+                        } else {
+                            $(radioButtons).eq(0).closest('span[data-kind=field-value]').siblings('.resetLinkParent:first').prepend(span);
+                        }
                     } else if (type=='notes') {
                         module.findInput(field).closest('span[data-kind=field-value]').siblings('.expandLinkParent:first').prepend(span);
                     } else {
@@ -169,24 +203,30 @@ class AutoSaveValue extends AbstractExternalModule
 
                 module.getFieldIcon = function(field, icon) {
                     let type = module.getFieldType(field);
-                    if (type=='notes') {
+                    if (type=='radio') {
+                        return module.findInput(field).closest('[data-kind=field-value]').siblings('.resetLinkParent:first').find('i.asv-'+icon);
+                    } else if (type=='notes') {
                         return module.findInput(field).closest('[data-kind=field-value]').siblings('.expandLinkParent:first').find('i.asv-'+icon);
                     } else {
                         return module.findInput(field).closest('[data-kind=field-value]').find('i.asv-'+icon);
                     }
                 };
 
-                module.fieldChange = function(field) {
-                    let f = module.findInput(field)
-                    if ($(f).eq(0).prop('nodeName')=='SELECT' && $(f).eq(0).hasClass('rc-autocomplete')) {
-                        f.on('change', {field:field}, module.updateHandler);
+                module.addUpdateHander = function(field) {
+                    let field_input = module.findInput(field);
+                    let field_type = module.getFieldType(field);
+                    if (field_type=='radio') {
+                        let radioButtons = module.findGroupInputs(field);
+                        radioButtons.on('change', {field:field}, module.updateHandler); // field_input is group of inputs, one per choice
+                    } else if (field_type=='dropdown-autocomplete') {
+                        field_input.on('change', {field:field}, module.updateHandler);
                     } else {
-                        f.on('blur', {field:field}, module.updateHandler);
+                        field_input.on('blur', {field:field}, module.updateHandler);
                     }
                 };
 
                 module.updateHandler = function(e) {
-                    module.save(e.data.field, module.readFieldValue(e.data.field));
+                    module.save(e.data.field, module.readFieldValue(e.data.field, this));
                 };
 
                 module.saveSuccess = function(field) {
@@ -216,16 +256,28 @@ class AutoSaveValue extends AbstractExternalModule
                     });
                 };
 
-                module.readFieldValue = function(field) {
-                    return module.findInput(field).eq(0).val();
+                module.readFieldValue = function(field, triggerElement=null) {
+                    if (triggerElement==null) {
+                        triggerElement = module.findInput(field);
+                    }
+                    return $(triggerElement).eq(0).val();
                 };
 
                 module.init = function() {
                     module.autoSaveFields.forEach((asf) => { 
                         module.appendIcons(asf);
-                        module.fieldChange(asf);
-                        if (dataEntryFormValuesChanged) module.save(asf, module.readFieldValue(asf)); // save fields with @DEFAULT or @SETVALUE values (including empty)
+                        module.addUpdateHander(asf);
                     });
+                    if (dataEntryFormValuesChanged) {
+                        // save fields with values from @DEFAULT, @TODAY, @NOW, or @SETVALUE (including empty)
+                        module.autoSaveOnLoadFields.forEach(function(asf) {
+                            module.save(asf, module.readFieldValue(asf));
+                        });
+                        if (module.defaultNoAutoSaveFields.length===0) {
+                            // all auto-populated fields have been saved, no need for save prompt on leaving
+                            dataEntryFormValuesChanged = false;
+                        }
+                    }
                 };
 
                 module.init();
