@@ -31,6 +31,8 @@ The following field types are currently **\*not supported\***:
 - Signature
 - Slider
 
+Auto-saving on data entry forms is **\*not compatible\*** with the "Require reason for change" option.
+
 ## Example
 
 <img alt="demonstration of auto-saving values on page load and after update" src="https://redcap.mcri.edu.au/surveys/index.php?pid=14961&__passthru=DataEntry%2Fimage_view.php&doc_id_hash=645acfe62abcae8fff3748da04ee1f1e9e67b52d&id=2143399&s=ZQvnHwJkw3zdumAQ&page=file_page&record=17&event_id=47634&field_name=thefile&instance=1" />
