@@ -43,7 +43,7 @@ class AutoSaveValue extends AbstractExternalModule
         'yesno'
     ];
 
-    public function redcap_data_entry_form($project_id, $record=null, $instrument, $event_id, $group_id=null, $repeat_instance=1) {
+    public function redcap_data_entry_form(int $project_id, string $record, string $instrument, int $event_id, ?int $group_id, int $repeat_instance=1) {
         if (is_null($record)) return; // cannot autosave until record exists (not on new record or first page of public survey)
         if (isset($_GET['em_preview_instrument']) && $_GET['em_preview_instrument']=='1') return; // don't save if previewing from designer using Preview Instrument EM
         global $Proj, $draft_preview_enabled;
@@ -58,7 +58,7 @@ class AutoSaveValue extends AbstractExternalModule
         $this->includeSaveFunctions($pf);
     }
 
-    public function redcap_survey_page($project_id, $record=null, $instrument, $event_id, $group_id=null, $survey_hash=null, $response_id=null, $repeat_instance=1) {
+    public function redcap_survey_page(int $project_id, string $record, string $instrument, int $event_id, int $group_id, string $survey_hash, ?int $response_id, int $repeat_instance = 1) {
         if (is_null($record)) return; // cannot autosave until record exists (not on new record or first page of public survey)
         global $pageFields;
         $this->noauth = true;
@@ -296,13 +296,13 @@ class AutoSaveValue extends AbstractExternalModule
 
         try {
             if (!is_array($payload)) throw new \Exception('Unexpected payload '.$this->escape(json_encode($payload)));
-            $payload = $this->escape(array_values($payload));
+            $payload = array_values($payload);
 
             if (!is_string($payload[0]) || !array_key_exists($payload[0], $Proj->forms[$instrument]['fields'])) throw new \Exception('Unexpected field name '.json_encode($payload[0]));
-            $field = $payload[0];
+            $field = $this->escape($payload[0]);
 
             if (!isset($payload[1])) throw new \Exception("Field $field no value supplied");
-            $value = $payload[1];
+            $value = $payload[1]; // nb do not use $this->escape() here because altering e.g. & in text values submitted to &amp; is undesirable 
 
             $saveData = array(
                 $Proj->table_pk => $this->record,
@@ -345,6 +345,8 @@ class AutoSaveValue extends AbstractExternalModule
         } else if ($fieldType=='text' && strpos($fieldValType,'dmy')) {
             $value = \DateTimeRC::date_dmy2ymd($value);
         }
+        // nb do not use $this->escape() here because altering e.g. & in text values submitted to &amp; is undesirable 
+        // save data gets validated and sanitised in REDCap::saveData()
         return $value;
     }
 }
