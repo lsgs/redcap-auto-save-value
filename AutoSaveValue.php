@@ -313,7 +313,11 @@ class AutoSaveValue extends AbstractExternalModule
                 $saveData['redcap_event_name'] = \REDCap::getEventNames(true, false, $this->event_id);
             }
 
-            if (!empty($this->instance) && $this->instance > 1) {
+            if ($Proj->isRepeatingEvent($this->event_id)) {
+                $saveData['redcap_repeat_instrument'] = '';
+                $saveData['redcap_repeat_instance'] = $this->instance;
+            } else if ($Proj->isRepeatingForm($this->event_id, $instrument)) {
+                $saveData['redcap_repeat_instrument'] = $instrument;
                 $saveData['redcap_repeat_instance'] = $this->instance;
             }
 
